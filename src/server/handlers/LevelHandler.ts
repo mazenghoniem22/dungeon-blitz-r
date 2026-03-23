@@ -549,13 +549,13 @@ export class LevelHandler {
     private static readonly FIRST_KEEP_MISSION_ID = MissionID.ClearYourHouse;
     private static readonly MISSION_NOT_STARTED = 0;
     private static readonly MISSION_IN_PROGRESS = 1;
-    private static readonly KEEP_TUTORIAL_BOSS_TRIGGER_X = -3200;
+    private static readonly KEEP_TUTORIAL_BOSS_TRIGGER_X = Number.MAX_SAFE_INTEGER;
     private static readonly KEEP_TUTORIAL_CUTSCENE_STEP_MS = 250;
     private static readonly KEEP_TUTORIAL_BOSS_INTRO_TOTAL_MS = 14750;
     private static readonly KEEP_TUTORIAL_BOSS_SOUND = 'D02_MoodLoop_GoblinHideout';
     private static readonly KEEP_TUTORIAL_BOSS_NAME = 'Ranik, The Geomancer';
-    private static readonly KEEP_TUTORIAL_FIRST_PARROT_X = -965;
-    private static readonly KEEP_TUTORIAL_SECOND_PARROT_X = -2627;
+    private static readonly KEEP_TUTORIAL_FIRST_PARROT_X = 7271;
+    private static readonly KEEP_TUTORIAL_SECOND_PARROT_X = 17981;
 
     static resetCraftTownTutorialInstance(): void {
         const levelName = 'CraftTownTutorial';
@@ -1322,25 +1322,25 @@ export class LevelHandler {
         const playerX = Number(player?.x ?? newX);
         const playerY = Number(player?.y ?? 0);
 
-        if (state.phase < 1 && newX <= -900) {
+        if (state.phase < 1 && newX >= 8400) {
             const parrotId = LevelHandler.findCraftTownTutorialParrotId(
                 client,
                 LevelHandler.KEEP_TUTORIAL_FIRST_PARROT_X
             );
             if (parrotId !== null) {
-                LevelHandler.sendStartSkit(client, parrotId, 0, LevelHandler.FIRST_KEEP_MISSION_ID);
+                LevelHandler.teleportParrotAndStartSkit(client, parrotId, playerX, playerY);
             }
             state.phase = 1;
             return;
         }
 
-        if (state.phase < 2 && newX <= -2400) {
+        if (state.phase < 2 && newX >= 19000) {
             const parrotId = LevelHandler.findCraftTownTutorialParrotId(
                 client,
                 LevelHandler.KEEP_TUTORIAL_SECOND_PARROT_X
             );
             if (parrotId !== null) {
-                LevelHandler.sendStartSkit(client, parrotId, 0, LevelHandler.FIRST_KEEP_MISSION_ID);
+                LevelHandler.teleportParrotAndStartSkit(client, parrotId, playerX, playerY);
             }
             state.phase = 2;
             return;
@@ -1359,12 +1359,38 @@ export class LevelHandler {
 
         const distanceToOldMan = Number(oldMan.distance ?? 999999);
         const reachedBossTrigger =
-            newX <= LevelHandler.KEEP_TUTORIAL_BOSS_TRIGGER_X ||
+            newX >= LevelHandler.KEEP_TUTORIAL_BOSS_TRIGGER_X ||
             (state.phase >= 2 && oldMan.entityId !== null && distanceToOldMan <= 700);
 
         if (reachedBossTrigger) {
             LevelHandler.maybeTriggerCraftTownTutorialBossIntro(client);
         }
+    }
+
+    private static teleportParrotAndStartSkit(client: Client, parrotId: number, x: number, y: number): void {
+        const parrotEnt = client.entities.get(parrotId);
+        if (parrotEnt) {
+            // 1. Destroy on client to avoid duplicate entity crash
+            EntityHandler.broadcastDestroyEntity(client.currentLevel, parrotId, null, client.levelInstanceId);
+            
+            // 2. Update server-side position
+            parrotEnt.x = x;
+            parrotEnt.y = y;
+            
+            const levelMap = LevelHandler.getCurrentLevelMap(client);
+            const globalParrot = levelMap?.get(parrotId);
+            if (globalParrot) {
+                globalParrot.x = x;
+                globalParrot.y = y;
+            }
+
+            // 3. Respawn for the client at the new position
+            // (broadcastDestroyEntity already cleared it from client.knownEntityIds)
+            EntityHandler.sendEntity(client, parrotEnt);
+        }
+        
+        // 4. Start skit
+        LevelHandler.sendStartSkit(client, parrotId, 0, LevelHandler.FIRST_KEEP_MISSION_ID);
     }
 
     private static maybeTriggerCraftTownTutorialBossIntro(client: Client): void {
