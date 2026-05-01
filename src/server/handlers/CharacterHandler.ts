@@ -26,6 +26,7 @@ import { ensureCharacterSocialState, normalizeCharacterKey } from '../core/Socia
 import { getPartyIdForClient, areClientsInSameParty } from '../core/PartySync';
 import { TransferTokenAllocator } from '../core/TransferTokenAllocator';
 import { normalizeGender } from '../utils/normalizeGender';
+import { ensureSigilStoreAlertState } from '../utils/AlertState';
 import {
     createDungeonInstanceId,
     getClientLevelScope,
@@ -39,6 +40,17 @@ const db = new JsonAdapter();
 export class CharacterHandler {
     private static readonly DYE_GOLD_COST = [0, 455, 550, 595, 650, 735, 795, 890, 965, 1075, 1155, 1285, 1385, 1520, 1685, 1810, 1985, 2180, 2380, 2600, 2845, 3090, 3375, 3710, 4025, 4410, 4790, 5225, 5705, 6215, 6750, 7340, 8020, 8690, 9455, 10300, 11230, 12185, 13255, 14405, 15635, 17010, 18475, 20050, 21725, 23650, 25640, 27835, 30165, 32730, 35540] as const;
     private static readonly DYE_IDOLS_COST = [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 7, 7, 8, 8, 9, 10, 11, 11, 12, 13, 14, 16, 17] as const;
+
+    private static resolveDungeonPacketLevel(levelName: string, configuredLevel: number, character: Character): number {
+        if (!LevelConfig.isDungeonLevel(levelName)) {
+            return configuredLevel;
+        }
+
+        const xpLevel = GameData.getPlayerLevelFromXp(Math.max(0, Number(character.xp ?? 0)));
+        const characterLevel = Math.max(1, Number(character.level ?? 0));
+        const resolvedLevel = xpLevel > 1 ? xpLevel : characterLevel;
+        return Math.max(1, Math.min(50, Math.round(resolvedLevel || configuredLevel || 1)));
+    }
 
     private static async saveCharacterSnapshot(client: Client): Promise<void> {
         if (!client.character) {
@@ -221,7 +233,12 @@ export class CharacterHandler {
 
         if (loadedCharacter) {
             client.character = loadedCharacter;
+            WorldEnter.ensureSelectedDisciplineTower(client.character);
+            PetHandler.normalizePetCollection(client.character);
             client.characters = loadedCharacters;
+            if (ensureSigilStoreAlertState(client.character)) {
+                client.characters = await db.saveCharacterSnapshot(client.userId, client.character);
+            }
             DebugLogger.logProgress('CharacterReload:loaded', client, loadedCharacter, {
                 source: 'disk'
             });
@@ -890,6 +907,8 @@ export class CharacterHandler {
         // Get Level Config
         const levelSpec = LevelConfig.get(currentLevelName);
         const isHard = currentLevelName.endsWith("Hard");
+        const runtimeMapLevel = CharacterHandler.resolveDungeonPacketLevel(currentLevelName, levelSpec.mapId, char);
+        const runtimeBaseLevel = CharacterHandler.resolveDungeonPacketLevel(currentLevelName, levelSpec.baseId, char);
 
         const pendingEntry = GlobalState.pendingWorld.get(token);
         const resolvedTransferToken = pendingEntry?.syncAnchorToken || token;
@@ -900,8 +919,8 @@ export class CharacterHandler {
             Config.HOST,
             Config.PORTS[0],
             levelSpec.swf,
-            levelSpec.mapId,
-            levelSpec.baseId,
+            runtimeMapLevel,
+            runtimeBaseLevel,
             currentLevelName,
             isHard ? "Hard" : "",
             isHard ? "Hard" : "",
@@ -946,6 +965,9 @@ export class CharacterHandler {
         const sendExtended = firstLogin || Boolean(GlobalState.pendingExtended.get(token));
 
         client.character = entry.character;
+        client.craftTownHostCharacter = entry.targetLevel === 'CraftTown'
+            ? entry.craftTownHostCharacter ?? null
+            : null;
         PetHandler.normalizeMountState(client.character);
         client.userId = entry.userId;
         client.token = token;

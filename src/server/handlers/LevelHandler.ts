@@ -10,6 +10,7 @@ import { BitReader } from '../network/protocol/bitReader';
 import { LevelConfig } from '../core/LevelConfig';
 import { GlobalState, PendingTransfer } from '../core/GlobalState';
 import { DebugLogger } from '../core/Debug';
+import { GameData } from '../core/GameData';
 import {
     cloneDungeonRunStats,
     finalizeDungeonRun,
@@ -23,6 +24,7 @@ import { MissionLoader } from '../data/MissionLoader';
 import { NpcLoader, NpcDef } from '../data/NpcLoader';
 import { MissionID } from '../data/runtime';
 import { Entity, EntityTeam } from '../core/Entity';
+import { Character } from '../database/Database';
 import { EntityHandler } from './EntityHandler';
 import { MissionHandler } from './MissionHandler';
 import { PetHandler } from './PetHandler';
@@ -87,6 +89,17 @@ export class LevelHandler {
         'That was the last of our Monster Fleet!'
     ]);
     private static readonly GOBLIN_RIVER_BOSS_INTRO_DEFAULT_MS = 5000;
+
+    private static resolveDungeonPacketLevel(levelName: string, configuredLevel: number, character: Character): number {
+        if (!LevelConfig.isDungeonLevel(levelName)) {
+            return configuredLevel;
+        }
+
+        const xpLevel = GameData.getPlayerLevelFromXp(Math.max(0, Number(character.xp ?? 0)));
+        const characterLevel = Math.max(1, Number(character.level ?? 0));
+        const resolvedLevel = xpLevel > 1 ? xpLevel : characterLevel;
+        return Math.max(1, Math.min(50, Math.round(resolvedLevel || configuredLevel || 1)));
+    }
 
     private static getCraftTownTutorialAuthoredHelperIds(): number[] {
         if (LevelHandler.craftTownTutorialHelperIdsCache) {
@@ -161,6 +174,7 @@ export class LevelHandler {
 
     private static cloneTransferGameplayState(target: Client, source: Client): void {
         target.character = source.character;
+        target.craftTownHostCharacter = source.craftTownHostCharacter;
         target.userId = source.userId;
         target.characters = Array.isArray(source.characters) ? [...source.characters] : [];
         target.currentLevel = source.currentLevel;
@@ -2596,7 +2610,8 @@ export class LevelHandler {
         newY: number,
         newHasCoord: boolean,
         sendExtended: boolean,
-        syncState: LevelSyncState | null = null
+        syncState: LevelSyncState | null = null,
+        craftTownHostCharacter?: Character
     ): void {
         const shouldSyncDungeonProgress = LevelConfig.isDungeonLevel(targetLevel);
         const levelInstanceId = shouldSyncDungeonProgress
@@ -2615,6 +2630,7 @@ export class LevelHandler {
         if (userId) {
             GlobalState.pendingWorld.set(token, {
                 character,
+                craftTownHostCharacter,
                 userId,
                 targetLevel,
                 levelInstanceId: levelInstanceId || undefined,
@@ -2639,6 +2655,10 @@ export class LevelHandler {
         }
 
         GlobalState.pendingExtended.set(token, sendExtended);
+    }
+
+    private static shouldSendExtendedOnTransfer(targetLevel: string): boolean {
+        return false;
     }
 
     private static allocateTransferToken(targetLevel: string): number {
@@ -3300,7 +3320,7 @@ export class LevelHandler {
             : LevelConfig.isDungeonLevel(targetLevel)
                 ? LevelConfig.normalizeLevelName(syncState?.syncEntryLevel) || oldLevel
                 : oldLevel;
-        const sendExtendedOnTransfer = false;
+        const sendExtendedOnTransfer = LevelHandler.shouldSendExtendedOnTransfer(targetLevel);
         LevelHandler.storePendingTransferToken(
             newToken,
             activeCharacter,
@@ -3311,7 +3331,8 @@ export class LevelHandler {
             newY,
             newHasCoord,
             sendExtendedOnTransfer,
-            syncState
+            syncState,
+            hostChar !== activeCharacter ? hostChar : undefined
         );
         LevelHandler.rememberTransferTokenAlias(packetToken, newToken);
         LevelHandler.rememberTransferTokenAlias(transferToken, newToken);
@@ -3320,6 +3341,8 @@ export class LevelHandler {
         const levelSpec = LevelConfig.get(targetLevel);
         const isHard = targetLevel.endsWith("Hard");
         const oldLevelSpec = LevelConfig.get(oldLevel);
+        const runtimeMapLevel = LevelHandler.resolveDungeonPacketLevel(targetLevel, levelSpec.mapId, hostChar);
+        const runtimeBaseLevel = LevelHandler.resolveDungeonPacketLevel(targetLevel, levelSpec.baseId, hostChar);
         
         const pkt = WorldEnter.buildEnterWorldPacket(
             newToken,
@@ -3331,8 +3354,8 @@ export class LevelHandler {
             Config.HOST,
             Config.PORTS[0],
             levelSpec.swf,
-            levelSpec.mapId,
-            levelSpec.baseId,
+            runtimeMapLevel,
+            runtimeBaseLevel,
             targetLevel,
             isHard ? "Hard" : "",
             isHard ? "Hard" : "",
