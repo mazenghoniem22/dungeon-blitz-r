@@ -934,6 +934,7 @@ export class CharacterHandler {
                 levelInstanceId: levelInstanceId || undefined,
                 previousLevel: previousLevelName,
                 userId: client.userId,
+                accountEmail: client.account?.email,
                 newX: spawn.x,
                 newY: spawn.y,
                 newHasCoord: spawn.hasCoord,
@@ -943,7 +944,8 @@ export class CharacterHandler {
                 syncRoomId,
                 syncStartedRoomIds,
                 syncEntryLevel,
-                syncQuestProgress
+                syncQuestProgress,
+                playSessionStartedAt: Date.now()
             });
             GlobalState.pendingExtended.set(token, true);
         }
@@ -1014,6 +1016,9 @@ export class CharacterHandler {
             : null;
         PetHandler.normalizeMountState(client.character);
         client.userId = entry.userId;
+        client.account = entry.accountEmail
+            ? { email: entry.accountEmail, user_id: entry.userId }
+            : null;
         client.token = token;
         client.clientEntID = 0;
         client.currentLevel = entry.targetLevel;
@@ -1061,6 +1066,9 @@ export class CharacterHandler {
         client.lastDoorId = -1;
         client.lastDoorTargetLevel = '';
         client.playerSpawned = false;
+        client.playSessionStartedAt = Number.isFinite(Number(entry.playSessionStartedAt)) && Number(entry.playSessionStartedAt) > 0
+            ? Math.round(Number(entry.playSessionStartedAt))
+            : Date.now();
         client.worldEnteredAt = Date.now();
         client.mountTransferGraceUntil = Date.now() + 5000;
         client.entities.clear();
@@ -1140,7 +1148,8 @@ export class CharacterHandler {
             syncEntryLevel: entry.syncEntryLevel,
             syncRoomId: entry.syncRoomId,
             syncStartedRoomIds: entry.syncStartedRoomIds,
-            syncQuestProgress: client.syncQuestProgress
+            syncQuestProgress: client.syncQuestProgress,
+            playSessionStartedAt: client.playSessionStartedAt
         });
         const characterKey = normalizeCharacterKey(client.character.name);
         if (characterKey) {
