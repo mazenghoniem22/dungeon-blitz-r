@@ -15,6 +15,7 @@ type SentPacket = {
 type FakeClient = {
     currentLevel: string;
     currentRoomId: number;
+    entryLevel?: string;
     levelInstanceId: string;
     playerSpawned: boolean;
     mountTransferGraceUntil: number;
@@ -155,6 +156,13 @@ const QUEST_LOCKED_DUNGEON_DOOR_CASES: QuestLockedDungeonDoorCase[] = [
         doorId: 104,
         missionId: MissionID.AbandonedArmory,
         dungeonTarget: 'OMM_Mission4'
+    },
+    {
+        label: 'Ancient Unrest',
+        currentLevel: 'ShazariDesert',
+        doorId: 105,
+        missionId: MissionID.AncientBurialGrounds,
+        dungeonTarget: 'SD_Mission5'
     }
 ];
 
@@ -426,6 +434,39 @@ function testQuestLockedDungeonDoorsRequireAcceptedMission(): void {
     }
 }
 
+function testDreadShazariPortalIsReturnOnlyFromNormalSide(): void {
+    const freshNormalClient = createClient('ShazariDesert', MissionID.Capstone, 3);
+
+    LevelHandler.handleRequestDoorState(freshNormalClient as never, createDoorPacket(300));
+
+    assert.deepEqual(
+        decodeDoorStatePacket(latestPacket(freshNormalClient, 0x42).payload),
+        {
+            doorId: 300,
+            state: 4,
+            targetLevel: 'ShazariDesertHard',
+            stars: 0
+        },
+        'normal Shazari Dread portal should stay locked unless it is returning from Dread Shazari'
+    );
+
+    const returningClient = createClient('ShazariDesert', MissionID.Capstone, 3);
+    returningClient.character.PreviousLevel.name = 'ShazariDesertHard';
+
+    LevelHandler.handleRequestDoorState(returningClient as never, createDoorPacket(300));
+
+    assert.deepEqual(
+        decodeDoorStatePacket(latestPacket(returningClient, 0x42).payload),
+        {
+            doorId: 300,
+            state: 1,
+            targetLevel: 'ShazariDesertHard',
+            stars: 0
+        },
+        'normal Shazari Dread portal should reopen as a return portal after entering from Dread Shazari'
+    );
+}
+
 async function main(): Promise<void> {
     ensureDataLoaded();
     testUnfinishedStoryDoorsStillEnterTheirDungeon();
@@ -434,6 +475,7 @@ async function main(): Promise<void> {
     testDirectWorldTravelDoorsUseTravelState();
     testFirstTimeDungeonDoorsUseDungeonState();
     testQuestLockedDungeonDoorsRequireAcceptedMission();
+    testDreadShazariPortalIsReturnOnlyFromNormalSide();
     console.log('story_travel_door_regression: ok');
 }
 

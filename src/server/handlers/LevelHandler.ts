@@ -2989,7 +2989,9 @@ export class LevelHandler {
             missionId === MissionID.DerelictionOfDuty ||
             missionId === MissionID.DerelictionOfDutyHard ||
             missionId === MissionID.AbandonedArmory ||
-            missionId === MissionID.AbandonedArmoryHard;
+            missionId === MissionID.AbandonedArmoryHard ||
+            missionId === MissionID.AncientBurialGrounds ||
+            missionId === MissionID.AncientBurialGroundsHard;
     }
 
     private static getAdditionalDreadfoldGateRequiredMission(currentLevel: string, targetLevel: string): number {
@@ -2998,6 +3000,17 @@ export class LevelHandler {
         }
 
         return 0;
+    }
+
+    private static isReturnToDreadShazariContext(client: Client, targetLevel: string): boolean {
+        const previousLevel =
+            LevelConfig.normalizeLevelName(client.character?.PreviousLevel?.name) ||
+            String(client.character?.PreviousLevel?.name ?? '').trim();
+        const entryLevel =
+            LevelConfig.normalizeLevelName(client.entryLevel) ||
+            String(client.entryLevel ?? '').trim();
+
+        return previousLevel === targetLevel || entryLevel === targetLevel;
     }
 
     private static isDreadfoldGateUnlocked(
@@ -3019,6 +3032,10 @@ export class LevelHandler {
 
         if (!LevelHandler.DREADFOLD_ENTRY_TRANSITIONS.has(`${normalizedCurrentLevel}->${targetLevel}`)) {
             return true;
+        }
+
+        if (normalizedCurrentLevel === 'ShazariDesert' && targetLevel === 'ShazariDesertHard') {
+            return LevelHandler.isReturnToDreadShazariContext(client, targetLevel);
         }
 
         if (LevelHandler.getMissionState(client, MissionID.Capstone) < LevelHandler.MISSION_CLAIMED) {
