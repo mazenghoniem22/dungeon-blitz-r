@@ -1,6 +1,7 @@
 import { strict as assert } from 'assert';
 import { Character } from '../database/Database';
 import { JsonAdapter } from '../database/JsonAdapter';
+import { BuildingID } from '../core/Enums';
 import { BuildingHandler } from '../handlers/BuildingHandler';
 import { BitBuffer } from '../network/protocol/bitBuffer';
 import { BitReader } from '../network/protocol/bitReader';
@@ -146,6 +147,55 @@ async function testOfflineExpiredBuildingUpgradeAppliesOnSync(): Promise<void> {
         .find((packet) => packet.targetBuildingId === 1);
     assert.equal(tomePacket?.targetRank, 2);
     assert.equal(tomePacket?.scaffoldingId, 0);
+}
+
+async function testStormgazeRefugeRankFiveUpgradePersistsAfterRelog(): Promise<void> {
+    const client = createClient();
+    client.character.class = 'Paladin';
+    client.character.MasterClass = 5;
+    client.character.magicForge = {
+        stats_by_building: {
+            '1': 1,
+            '2': 5,
+            '3': 1,
+            '4': 4,
+            '5': 1,
+            '12': 0,
+            '13': 4
+        }
+    };
+    client.character.buildingUpgrade = {
+        buildingID: BuildingID.SentinelTower,
+        rank: 5,
+        ReadyTime: Math.floor(Date.now() / 1000) - 30
+    };
+
+    await withMockedCharacterSave(async () => {
+        await BuildingHandler.syncCompletionState(client as never);
+    });
+
+    assert.equal(
+        client.character.magicForge?.stats_by_building?.[String(BuildingID.SentinelTower)],
+        5,
+        'expired Stormgaze Refuge upgrade should be committed to the saved building rank on relog'
+    );
+    assert.deepEqual(client.character.buildingUpgrade, { buildingID: 0, rank: 0, ReadyTime: 0 });
+
+    const completePacket = client.sentPackets.find((packet) => packet.id === 0xD8);
+    assert.ok(completePacket, 'Stormgaze Refuge completion should be replayed after relog');
+    if (completePacket) {
+        const br = new BitReader(completePacket.payload);
+        assert.equal(br.readMethod20(5), BuildingID.SentinelTower);
+        assert.equal(br.readMethod20(5), 5);
+    }
+
+    const stormgazePacket = client.sentPackets
+        .filter((packet) => packet.id === 0xDA)
+        .map((packet) => decodeBuildingDelta(packet.payload))
+        .find((packet) => packet.targetBuildingId === BuildingID.SentinelTower);
+
+    assert.equal(stormgazePacket?.targetRank, 5, 'CraftTown refresh should reassert Stormgaze Refuge rank 5');
+    assert.equal(stormgazePacket?.scaffoldingId, 0, 'completed Stormgaze Refuge upgrade should not keep scaffolding active');
 }
 
 async function testDuplicateBuiltTomeUpgradeRequestIsIgnoredAndReassertsHomeState(): Promise<void> {
@@ -414,6 +464,7 @@ function testCraftTownRefreshUsesVisitedHomeOwnerBuildingState(): void {
 async function main(): Promise<void> {
     await testBuildingSpeedupCompletesUpgradeAndReassertsCraftTownState();
     await testOfflineExpiredBuildingUpgradeAppliesOnSync();
+    await testStormgazeRefugeRankFiveUpgradePersistsAfterRelog();
     await testDuplicateBuiltTomeUpgradeRequestIsIgnoredAndReassertsHomeState();
     await testBuildingUpgradePersistsGoldPurchaseAndRealReadyTime();
     await testBuildingUpgradePersistsIdolPurchase();
