@@ -39322,8 +39322,8 @@
 		<RewardClass>NoLoot</RewardClass>
 		<Realm>Spirit</Realm>
 		<Speed>0</Speed>
-		<Width>0</Width>
-		<Height>0</Height>
+		<Width>200</Width>
+		<Height>250</Height>
 		<Behavior>SpawnerNephit</Behavior>
 		<SleepAnim>Sleep</SleepAnim>
 		<EquippedGear/>
@@ -39548,8 +39548,8 @@
 		<RewardClass>NoLoot</RewardClass>
 		<Realm>Spirit</Realm>
 		<Speed>0</Speed>
-		<Width>0</Width>
-		<Height>0</Height>
+		<Width>200</Width>
+		<Height>250</Height>
 		<Behavior>SpawnerNephit</Behavior>
 		<SleepAnim>Sleep</SleepAnim>
 		<EquippedGear/>
