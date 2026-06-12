@@ -2982,8 +2982,30 @@ async function testFriedrichDisplayNameBossRegenAfterPlayerDeath(): Promise<void
     ensureOriginalGameDataLoaded();
 
     const scenarios = [
-        { levelName: 'JC_Mission3', playerName: 'FriedrichNormalDeath' },
-        { levelName: 'JC_Mission3Hard', playerName: 'FriedrichHardDeath' }
+        {
+            levelName: 'JC_Mission3',
+            playerName: 'FriedrichNormalDeath',
+            entityName: 'DefectorMage',
+            bossDisplayName: 'Prince Friedrich Hocke'
+        },
+        {
+            levelName: 'JC_Mission3Hard',
+            playerName: 'FriedrichHardDeath',
+            entityName: 'DefectorMageHard',
+            bossDisplayName: 'Prince Friedrich Hocke'
+        },
+        {
+            levelName: 'JC_Mission3',
+            playerName: 'FredrichNormalDeath',
+            entityName: 'DefectorMage',
+            bossDisplayName: 'Prince Fredrich Hocke'
+        },
+        {
+            levelName: 'JC_Mission3Hard',
+            playerName: 'FredrichHardDeath',
+            entityName: 'DefectorMageHard',
+            bossDisplayName: 'Prince Fredrich Hocke'
+        }
     ];
 
     for (const [scenarioIndex, scenario] of scenarios.entries()) {
@@ -2995,9 +3017,9 @@ async function testFriedrichDisplayNameBossRegenAfterPlayerDeath(): Promise<void
         attachPlayerEntity(player);
 
         const bossId = 900060 + scenarioIndex;
-        const boss = createRegenHostile(bossId, 'Prince Friedrich Hocke', player.currentRoomId, {
-            displayName: 'Prince Friedrich Hocke',
-            characterName: 'Prince Friedrich Hocke',
+        const boss = createRegenHostile(bossId, scenario.entityName, player.currentRoomId, {
+            displayName: scenario.bossDisplayName,
+            characterName: scenario.bossDisplayName,
             entRank: '',
             hp: 400,
             maxHp: 1000,
@@ -3017,12 +3039,12 @@ async function testFriedrichDisplayNameBossRegenAfterPlayerDeath(): Promise<void
         try {
             Date.now = () => nowMs;
             await CombatHandler.handleRequestRespawn(player as never, request.toBuffer());
-            assert.equal(boss.hp, 410, `${scenario.levelName} Friedrich should get the immediate death regen tick`);
+            assert.equal(boss.hp, 410, `${scenario.levelName} ${scenario.bossDisplayName} should get the immediate death regen tick`);
 
             Date.now = () => nowMs + 1_000;
             CombatHandler.processOutOfCombatRegen(getClientLevelScope(player as never), Date.now());
 
-            assert.equal(boss.hp, 420, `${scenario.levelName} Friedrich should keep regenerating after player death`);
+            assert.equal(boss.hp, 420, `${scenario.levelName} ${scenario.bossDisplayName} should keep regenerating after player death`);
             const regenPackets = player.sentPackets
                 .filter((packet) => packet.id === 0x78)
                 .map((packet) => parseRegenPacket(packet.payload));
