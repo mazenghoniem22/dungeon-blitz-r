@@ -3,6 +3,7 @@ import * as path from 'path';
 import { Character } from '../database/Database';
 import { GlobalState } from '../core/GlobalState';
 import { LevelConfig } from '../core/LevelConfig';
+import { MissionID } from '../data/runtime';
 import { SocialHandler } from '../handlers/SocialHandler';
 import { BitBuffer } from '../network/protocol/bitBuffer';
 import { BitReader } from '../network/protocol/bitReader';
@@ -35,14 +36,17 @@ function ensureLevelConfigLoaded(): void {
     }
 }
 
-function createFakeClient(gold: number): FakeClient {
+function createFakeClient(gold: number, missions: Record<string, Record<string, number>> = {}): FakeClient {
     const sentPackets: SentPacket[] = [];
     const character: Character = {
         name: 'Teleporter',
         class: 'Paladin',
         gender: 'male',
         level: 50,
-        gold
+        gold,
+        CurrentLevel: { name: 'CraftTown', x: 0, y: 0 },
+        PreviousLevel: { name: 'NewbieRoad', x: 1421, y: 826 },
+        missions
     };
 
     return {
@@ -120,7 +124,18 @@ async function testPaidNormalTeleport(): Promise<void> {
 }
 
 async function testPaidDreadTeleport(): Promise<void> {
-    const client = createFakeClient(40_000);
+    const client = createFakeClient(40_000, {
+        [String(MissionID.Capstone)]: {
+            state: 3,
+            currCount: 1,
+            claimed: 1,
+            complete: 1
+        },
+        [String(MissionID.HeadToValhavenHard)]: {
+            state: 2,
+            currCount: 1
+        }
+    });
 
     await runTeleportCommand(client, '/teleport:dread-valhaven');
 
@@ -140,7 +155,12 @@ async function testPaidDreadTeleport(): Promise<void> {
 }
 
 async function testCemetryHillSlugMatchesRequestedCommand(): Promise<void> {
-    const client = createFakeClient(20_000);
+    const client = createFakeClient(20_000, {
+        [String(MissionID.ClearTheBridge)]: {
+            state: 2,
+            currCount: 1
+        }
+    });
 
     await runTeleportCommand(client, '/teleport:cemetry-hill');
 
@@ -148,8 +168,57 @@ async function testCemetryHillSlugMatchesRequestedCommand(): Promise<void> {
     assert.equal(GlobalState.pendingTeleports.get(client.token)?.targetLevel, 'CemeteryHill');
 }
 
+async function testLockedDestinationDoesNotSpendGoldOrTeleport(): Promise<void> {
+    const client = createFakeClient(100_000);
+
+    await runTeleportCommand(client, '/teleport:castle-hocke');
+
+    assert.equal(client.character.gold, 100_000, 'locked destination should not spend gold');
+    assert.equal(GlobalState.pendingTeleports.has(client.token), false, 'locked destination should not queue a transfer');
+    assert.equal(client.sentPackets.some((packet) => packet.id === 0xB4), false, 'locked destination should not send gold loss');
+    assert.equal(client.sentPackets.some((packet) => packet.id === 0x2e), false, 'locked destination should not transfer');
+
+    const statusPacket = client.sentPackets.find((packet) => packet.id === 0x44);
+    assert.ok(statusPacket, 'locked destination should explain the unlock requirement');
+    assert.equal(decodeStatus(statusPacket!.payload), "You haven't unlocked Castle Hocke yet.");
+}
+
+async function testUnlockedStoryDestinationCanTeleport(): Promise<void> {
+    const client = createFakeClient(25_000, {
+        [String(MissionID.DeepgardDragon)]: {
+            state: 2,
+            currCount: 1
+        }
+    });
+
+    await runTeleportCommand(client, '/teleport:castle-hocke');
+
+    assert.equal(client.character.gold, 5_000, 'unlocked story destination should spend gold');
+    assert.equal(GlobalState.pendingTeleports.get(client.token)?.targetLevel, 'Castle');
+}
+
+async function testLockedDreadDestinationRequiresDreadfoldUnlock(): Promise<void> {
+    const client = createFakeClient(100_000);
+
+    await runTeleportCommand(client, '/teleport:dread-felbridge');
+
+    assert.equal(client.character.gold, 100_000, 'locked dread destination should not spend gold');
+    assert.equal(GlobalState.pendingTeleports.has(client.token), false, 'locked dread destination should not queue a transfer');
+    assert.equal(client.sentPackets.some((packet) => packet.id === 0xB4), false, 'locked dread destination should not send gold loss');
+    assert.equal(client.sentPackets.some((packet) => packet.id === 0x2e), false, 'locked dread destination should not transfer');
+
+    const statusPacket = client.sentPackets.find((packet) => packet.id === 0x44);
+    assert.ok(statusPacket, 'locked dread destination should explain the unlock requirement');
+    assert.equal(decodeStatus(statusPacket!.payload), "You haven't unlocked Dread Felbridge yet.");
+}
+
 async function testInsufficientGoldBlocksTeleport(): Promise<void> {
-    const client = createFakeClient(19_999);
+    const client = createFakeClient(19_999, {
+        [String(MissionID.ClearTheBridge)]: {
+            state: 2,
+            currCount: 1
+        }
+    });
 
     await runTeleportCommand(client, '/teleport:felbridge');
 
@@ -175,6 +244,15 @@ async function main(): Promise<void> {
 
         GlobalState.pendingTeleports.clear();
         await testCemetryHillSlugMatchesRequestedCommand();
+
+        GlobalState.pendingTeleports.clear();
+        await testLockedDestinationDoesNotSpendGoldOrTeleport();
+
+        GlobalState.pendingTeleports.clear();
+        await testUnlockedStoryDestinationCanTeleport();
+
+        GlobalState.pendingTeleports.clear();
+        await testLockedDreadDestinationRequiresDreadfoldUnlock();
 
         GlobalState.pendingTeleports.clear();
         await testInsufficientGoldBlocksTeleport();

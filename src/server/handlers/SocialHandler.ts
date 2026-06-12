@@ -222,6 +222,11 @@ export class SocialHandler {
         const cost = parsed.dread ? SocialHandler.DREAD_TELEPORT_COST_GOLD : SocialHandler.TELEPORT_COST_GOLD;
         const currentGold = Math.max(0, Math.floor(Number(client.character.gold ?? 0)));
         const destinationName = `${parsed.dread ? 'Dread ' : ''}${destination.displayName}`;
+        if (!LevelHandler.isLevelUnlockedForFastTravel(client, teleport.targetLevel)) {
+            SocialHandler.sendChatStatus(client, `You haven't unlocked ${destinationName} yet.`);
+            return true;
+        }
+
         if (currentGold < cost) {
             SocialHandler.sendChatStatus(
                 client,
