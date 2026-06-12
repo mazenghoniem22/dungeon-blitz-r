@@ -37,6 +37,7 @@ export class ForgeHandler {
     private static readonly RESPEC_STONE_DURATION_SECONDS = 259200;
     private static readonly CHARM_REMOVER_DURATION_SECONDS = 86400;
     private static readonly FREE_SPEEDUP_THRESHOLD_SECONDS = 180;
+    private static readonly FREE_SPEEDUP_CLOCK_GRACE_SECONDS = 10;
     private static readonly FORGE_XP_CAP = 159_948;
     private static readonly DEFAULT_FORGE_XP_GAIN = 4000;
     private static readonly completionTimers = new Map<string, NodeJS.Timeout>();
@@ -314,7 +315,8 @@ export class ForgeHandler {
         }
 
         const remainingSeconds = readyTime - ForgeHandler.getNowSeconds();
-        return remainingSeconds > 0 && remainingSeconds <= ForgeHandler.FREE_SPEEDUP_THRESHOLD_SECONDS;
+        return remainingSeconds > 0
+            && remainingSeconds <= ForgeHandler.FREE_SPEEDUP_THRESHOLD_SECONDS + ForgeHandler.FREE_SPEEDUP_CLOCK_GRACE_SECONDS;
     }
 
     private static completeActiveForgeNow(forgeState: ForgeState): void {

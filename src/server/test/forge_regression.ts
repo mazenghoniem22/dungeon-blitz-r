@@ -401,6 +401,38 @@ async function testForgeSpeedupAcceptsZeroCostInFreeWindow(): Promise<void> {
     assert.equal(decodeForgeResultPacket(resultPacket!.payload).primary, CharmID.RespecStone);
 }
 
+async function testCharmForgeSpeedupAcceptsZeroCostAtClientFreeBoundary(): Promise<void> {
+    const client = createClient();
+    client.character.magicForge = {
+        stats_by_building: { '2': 5 },
+        primary: CharmID.Trog01,
+        secondary: 2,
+        secondary_tier: 1,
+        usedlist: 1 << 1,
+        ReadyTime: Math.floor(Date.now() / 1000) + 185,
+        forge_roll_a: 0,
+        forge_roll_b: 0,
+        is_extended_forge: false
+    };
+
+    await withMockedCharacterSave(async () =>
+        withPatchedRandom([0.25, 0.5], async () => {
+            await ForgeHandler.handleForgeSpeedUpPacket(client as never, createForgeSpeedupPacket(0));
+        })
+    );
+
+    assert.equal(client.character.mammothIdols, 20);
+    assert.equal(client.character.magicForge?.ReadyTime, 0);
+    assert.equal(client.sentPackets.some((packet) => packet.id === 0xB5), false);
+
+    const resultPacket = client.sentPackets.find((packet) => packet.id === 0xCD);
+    assert.ok(resultPacket, 'zero-cost normal charm speedup should complete at the client free boundary');
+    const decoded = decodeForgeResultPacket(resultPacket!.payload);
+    assert.equal(decoded.primary, CharmID.Trog01);
+    assert.equal(decoded.tier, 1);
+    assert.equal(decoded.secondary, 2);
+}
+
 async function testForgeSpeedupZeroCostAfterReadySendsCompletedResult(): Promise<void> {
     const client = createClient();
     client.character.magicForge = {
@@ -596,6 +628,7 @@ async function main(): Promise<void> {
     await testForgeSpeedupCompletesImmediatelyAndSendsResultPacket();
     await testForgeSpeedupRejectsZeroCostBeforeReady();
     await testForgeSpeedupAcceptsZeroCostInFreeWindow();
+    await testCharmForgeSpeedupAcceptsZeroCostAtClientFreeBoundary();
     await testForgeSpeedupZeroCostAfterReadySendsCompletedResult();
     await testCollectForgeCharmAwardsCharmAndCraftXp();
     await testForgeRerollPreservesTierAndUpdatesUsedlist();
