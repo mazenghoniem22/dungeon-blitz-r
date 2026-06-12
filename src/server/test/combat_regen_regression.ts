@@ -1,4 +1,5 @@
 import { strict as assert } from 'assert';
+import * as fs from 'fs';
 import * as path from 'path';
 import { GlobalState } from '../core/GlobalState';
 import { BitBuffer } from '../network/protocol/bitBuffer';
@@ -2818,6 +2819,69 @@ async function testDungeonBossRegenUsesFetchedBossList(): Promise<void> {
     }
 }
 
+function testDungeonEnemyElementBossesAllCountForBossRegen(): void {
+    ensureOriginalGameDataLoaded();
+
+    const enemyElementPath = path.resolve(__dirname, '../data/dungeon_enemy_elements.json');
+    const dungeonEnemyElements = JSON.parse(fs.readFileSync(enemyElementPath, 'utf8')) as Record<
+        string,
+        { enemyTypes?: Array<{ enemyType?: string }> }
+    >;
+    const bossEntries: Array<{ levelName: string; enemyType: string }> = [];
+
+    for (const [levelName, entry] of Object.entries(dungeonEnemyElements)) {
+        const normalizedLevel = LevelConfig.normalizeLevelName(levelName) || levelName;
+        if (!LevelConfig.isDungeonLevel(normalizedLevel) || !Array.isArray(entry?.enemyTypes)) {
+            continue;
+        }
+
+        for (const enemy of entry.enemyTypes) {
+            const enemyType = String(enemy?.enemyType ?? '').trim();
+            if (!enemyType || GameData.getEntityRank({ name: enemyType }) !== 'Boss') {
+                continue;
+            }
+
+            bossEntries.push({ levelName, enemyType });
+            assert.equal(
+                GameData.isDungeonBossEntity(levelName, { name: enemyType }),
+                true,
+                `${levelName}/${enemyType} should be counted as a dungeon boss for regen`
+            );
+        }
+    }
+
+    assert.equal(bossEntries.length, 147, 'fixture should cover every extracted dungeon boss enemy type');
+
+    const formerlyUnmappedBoss = bossEntries.find((entry) =>
+        entry.levelName === 'JC_Mini1' && entry.enemyType === 'TowerGuard1'
+    );
+    assert.ok(formerlyUnmappedBoss, 'test fixture should include a boss from the extracted enemy list');
+
+    resetState();
+    const nowMs = 10_000;
+    const player = createFakeClient(72, 'ExtractedBossRegen', 44);
+    moveClientToLevel(player, formerlyUnmappedBoss.levelName);
+    player.authoritativeCurrentHp = 0;
+    player.enemyDeathRegenArmed = true;
+
+    const bossId = 920072;
+    const boss = createRegenHostile(bossId, formerlyUnmappedBoss.enemyType, player.currentRoomId, {
+        deathRegenArmedForPlayerKey: `${player.token}:${player.clientEntID}`
+    });
+    const levelScope = getClientLevelScope(player as never);
+    GlobalState.levelEntities.set(levelScope, new Map<number, any>([[boss.id, boss]]));
+    player.knownEntityIds.add(boss.id);
+    GlobalState.sessionsByToken.set(player.token, player as never);
+
+    CombatHandler.processOutOfCombatRegen(levelScope, nowMs);
+
+    assert.equal(boss.hp, 410, 'extracted dungeon boss enemy types should receive boss regen after player death');
+    const regenPackets = player.sentPackets
+        .filter((packet) => packet.id === 0x78)
+        .map((packet) => parseRegenPacket(packet.payload));
+    assert.deepEqual(regenPackets.filter((packet) => packet.entityId === boss.id), [{ entityId: boss.id, amount: 10 }]);
+}
+
 async function testClientOnlyBossRegenHealsBossRankedEnemiesOnly(): Promise<void> {
     resetState();
     ensureOriginalGameDataLoaded();
@@ -3085,6 +3149,7 @@ async function run(): Promise<void> {
     testBossRegenUsesReducedLocalCopyWhenSharedCopyIsFull();
     testEscapedLivePlayerOutsideBossAggroDoesNotArmBossRegen();
     await testDungeonBossRegenUsesFetchedBossList();
+    testDungeonEnemyElementBossesAllCountForBossRegen();
     await testClientOnlyBossRegenHealsBossRankedEnemiesOnly();
     await testFriedrichDisplayNameBossRegenAfterPlayerDeath();
     await testAuthoritativeDeadPlayerStateAllowsBossRegen();

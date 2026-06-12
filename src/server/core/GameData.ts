@@ -22,6 +22,10 @@ interface GearDropContext {
     currentLevel?: string | null;
 }
 
+interface DungeonEnemyElementEntry {
+    enemyTypes?: Array<{ enemyType?: string }>;
+}
+
 export class GameData {
     static readonly MONSTER_GOLD_TABLE: number[] = [0, 43, 46, 49, 53, 57, 61, 65, 70, 75, 80, 86, 92, 98, 106, 113, 121, 130, 139, 149, 160, 171, 184, 197, 211, 226, 243, 260, 279, 299, 320, 343, 368, 394, 422, 453, 485, 520, 557, 597, 640, 686, 735, 788, 844, 905, 970, 1040, 1114, 1194, 1280];
     static readonly MONSTER_EXP_TABLE: number[] = [0, 10, 13, 15, 17, 20, 23, 26, 30, 35, 40, 46, 53, 61, 70, 80, 92, 106, 121, 139, 160, 184, 211, 243, 279, 320, 368, 422, 485, 557, 640, 735, 844, 970, 1114, 1280, 1470, 1689, 1940, 2229, 2560, 2941, 3378, 3880, 4457, 5120, 5881, 6756, 7760, 8914, 10240];
@@ -477,49 +481,74 @@ export class GameData {
         GameData.addDungeonBossEntityKey('JC_Mini2Hard', 'TowerGuard2Hard');
 
         const npcDir = path.join(dataDir, 'npcs');
-        if (!fs.existsSync(npcDir)) {
-            console.warn('[GameData] NPC directory not found; dungeon boss regen will use gear boss locations only.');
-            return;
-        }
-
         let rawNpcBossCount = 0;
-        try {
-            for (const file of fs.readdirSync(npcDir)) {
-                if (!file.endsWith('.json')) {
-                    continue;
-                }
-
-                const levelName = path.basename(file, '.json');
-                const normalizedLevel = LevelConfig.normalizeLevelName(levelName) || levelName;
-                if (!LevelConfig.isDungeonLevel(normalizedLevel)) {
-                    continue;
-                }
-
-                const npcs = readJsonFile<any[]>(path.join(npcDir, file));
-                if (!Array.isArray(npcs)) {
-                    continue;
-                }
-
-                for (const npc of npcs) {
-                    if (Number(npc?.team ?? 0) !== 2) {
-                        continue;
-                    }
-                    const npcName = String(npc?.name ?? '').trim();
-                    if (!npcName || GameData.getEntityRank(npc) !== 'Boss') {
+        if (!fs.existsSync(npcDir)) {
+            console.warn('[GameData] NPC directory not found; dungeon boss regen will use gear and extracted enemy boss locations only.');
+        } else {
+            try {
+                for (const file of fs.readdirSync(npcDir)) {
+                    if (!file.endsWith('.json')) {
                         continue;
                     }
 
-                    GameData.addDungeonBossEntityKey(normalizedLevel, npcName);
-                    rawNpcBossCount += 1;
+                    const levelName = path.basename(file, '.json');
+                    const normalizedLevel = LevelConfig.normalizeLevelName(levelName) || levelName;
+                    if (!LevelConfig.isDungeonLevel(normalizedLevel)) {
+                        continue;
+                    }
+
+                    const npcs = readJsonFile<any[]>(path.join(npcDir, file));
+                    if (!Array.isArray(npcs)) {
+                        continue;
+                    }
+
+                    for (const npc of npcs) {
+                        if (Number(npc?.team ?? 0) !== 2) {
+                            continue;
+                        }
+                        const npcName = String(npc?.name ?? '').trim();
+                        if (!npcName || GameData.getEntityRank(npc) !== 'Boss') {
+                            continue;
+                        }
+
+                        GameData.addDungeonBossEntityKey(normalizedLevel, npcName);
+                        rawNpcBossCount += 1;
+                    }
                 }
+            } catch (err) {
+                console.error('[GameData] Failed to load raw NPC dungeon boss map:', err);
             }
-
-            console.log(
-                `[GameData] Loaded dungeon boss regen map for ${Object.keys(GameData.DUNGEON_BOSS_ENTITY_KEYS_BY_LEVEL).length} dungeons (${rawNpcBossCount} raw NPC boss entries).`
-            );
-        } catch (err) {
-            console.error('[GameData] Failed to load raw NPC dungeon boss map:', err);
         }
+
+        let extractedEnemyBossCount = 0;
+        const dungeonEnemyElementsPath = path.join(dataDir, 'dungeon_enemy_elements.json');
+        if (fs.existsSync(dungeonEnemyElementsPath)) {
+            try {
+                const dungeonEnemyElements = readJsonFile<Record<string, DungeonEnemyElementEntry>>(dungeonEnemyElementsPath);
+                for (const [levelName, entry] of Object.entries(dungeonEnemyElements)) {
+                    const normalizedLevel = LevelConfig.normalizeLevelName(levelName) || levelName;
+                    if (!LevelConfig.isDungeonLevel(normalizedLevel) || !Array.isArray(entry?.enemyTypes)) {
+                        continue;
+                    }
+
+                    for (const enemy of entry.enemyTypes) {
+                        const enemyName = String(enemy?.enemyType ?? '').trim();
+                        if (!enemyName || GameData.getEntityRank({ name: enemyName }) !== 'Boss') {
+                            continue;
+                        }
+
+                        GameData.addDungeonBossEntityKey(normalizedLevel, enemyName);
+                        extractedEnemyBossCount += 1;
+                    }
+                }
+            } catch (err) {
+                console.error('[GameData] Failed to load extracted dungeon enemy boss map:', err);
+            }
+        }
+
+        console.log(
+            `[GameData] Loaded dungeon boss regen map for ${Object.keys(GameData.DUNGEON_BOSS_ENTITY_KEYS_BY_LEVEL).length} dungeons (${rawNpcBossCount} raw NPC boss entries, ${extractedEnemyBossCount} extracted enemy boss entries).`
+        );
     }
 
     private static findClientContentPath(dataDir: string, ...segments: string[]): string | null {
