@@ -205,15 +205,22 @@ function createMeyloursEmbersClient(): FakeClient {
     return client;
 }
 
-function createCemeteryMiniClient(): FakeClient {
+function createCemeteryMiniClient(
+    currentLevel: string = 'CH_MiniMission1',
+    characterLevel: number = 11
+): FakeClient {
     const client = createFakeClient();
-    client.currentLevel = 'CH_MiniMission1';
-    client.levelInstanceId = 'lady-ellen-full-clear-flow';
+    client.currentLevel = currentLevel;
+    client.levelInstanceId = `${currentLevel.toLowerCase()}-full-clear-flow`;
     client.forcedDungeonCompletionScope = '';
-    client.character.name = 'LadyEllenFullClearTester';
-    client.character.level = 11;
-    client.character.CurrentLevel = { name: 'CH_MiniMission1', x: 0, y: 0 };
-    client.character.PreviousLevel = { name: 'CemeteryHill', x: 7469, y: 385 };
+    client.character.name = `${currentLevel}FullClearTester`;
+    client.character.level = characterLevel;
+    client.character.CurrentLevel = { name: currentLevel, x: 0, y: 0 };
+    client.character.PreviousLevel = {
+        name: currentLevel.endsWith('Hard') ? 'CemeteryHillHard' : 'CemeteryHill',
+        x: 7469,
+        y: 385
+    };
     client.character.missions = {
         [String(MissionID.DeliverToSwamp)]: {
             state: 3,
@@ -781,30 +788,53 @@ function testLoginRepairAcceptsMissingValhavenDungeonChainQuest(): void {
 }
 
 async function testCemeteryMiniDungeonStartsMissionOnEntry(): Promise<void> {
-    const client = createCemeteryMiniClient();
+    const cases: Array<{ level: string; characterLevel: number; missionId: MissionID }> = [
+        { level: 'CH_MiniMission1', characterLevel: 11, missionId: MissionID.ClearMini1 },
+        { level: 'CH_MiniMission2', characterLevel: 11, missionId: MissionID.ClearMini2 },
+        { level: 'CH_MiniMission3', characterLevel: 12, missionId: MissionID.ClearMini3 },
+        { level: 'CH_MiniMission4', characterLevel: 12, missionId: MissionID.ClearMini4 },
+        { level: 'CH_MiniMission5', characterLevel: 13, missionId: MissionID.ClearMini5 },
+        { level: 'CH_MiniMission6', characterLevel: 13, missionId: MissionID.ClearMini6 },
+        { level: 'CH_MiniMission7', characterLevel: 14, missionId: MissionID.ClearMini7 },
+        { level: 'CH_MiniMission8', characterLevel: 14, missionId: MissionID.ClearMini8 },
+        { level: 'CH_MiniMission9', characterLevel: 15, missionId: MissionID.ClearMini9 },
+        { level: 'CH_MiniMission1Hard', characterLevel: 26, missionId: MissionID.ClearMini1Hard },
+        { level: 'CH_MiniMission2Hard', characterLevel: 26, missionId: MissionID.ClearMini2Hard },
+        { level: 'CH_MiniMission3Hard', characterLevel: 27, missionId: MissionID.ClearMini3Hard },
+        { level: 'CH_MiniMission4Hard', characterLevel: 27, missionId: MissionID.ClearMini4Hard },
+        { level: 'CH_MiniMission5Hard', characterLevel: 28, missionId: MissionID.ClearMini5Hard },
+        { level: 'CH_MiniMission6Hard', characterLevel: 28, missionId: MissionID.ClearMini6Hard },
+        { level: 'CH_MiniMission7Hard', characterLevel: 29, missionId: MissionID.ClearMini7Hard },
+        { level: 'CH_MiniMission8Hard', characterLevel: 29, missionId: MissionID.ClearMini8Hard },
+        { level: 'CH_MiniMission9Hard', characterLevel: 30, missionId: MissionID.ClearMini9Hard }
+    ];
 
-    await MissionHandler.prepareFullClearDungeonEntry(client as never);
-    MissionHandler.syncFullClearDungeonEntryMissionToClient(client as never);
+    for (const testCase of cases) {
+        const client = createCemeteryMiniClient(testCase.level, testCase.characterLevel);
 
-    assert.equal(
-        Number(client.character.missions[String(MissionID.ClearMini1)]?.state ?? 0),
-        1,
-        'Cemetery Hill mini tomb entry should start its matching clear mission'
-    );
-    assert.equal(
-        Number(client.character.questTrackerState ?? -1),
-        0,
-        'Cemetery Hill mini tomb entry should reset the dungeon progress tracker'
-    );
-    const missionAdded = client.sentPackets.find((packet) => packet.id === 0x85);
-    assert.ok(
-        missionAdded,
-        'Cemetery Hill mini tomb entry should push the active mission snapshot to the client'
-    );
-    assert.deepEqual(decodeMissionAddedPacket(missionAdded!.payload), {
-        missionId: MissionID.ClearMini1,
-        active: 1
-    });
+        await MissionHandler.prepareFullClearDungeonEntry(client as never);
+        MissionHandler.syncFullClearDungeonEntryMissionToClient(client as never);
+
+        assert.equal(
+            Number(client.character.missions[String(testCase.missionId)]?.state ?? 0),
+            1,
+            `${testCase.level} entry should start its matching clear mission`
+        );
+        assert.equal(
+            Number(client.character.questTrackerState ?? -1),
+            0,
+            `${testCase.level} entry should reset the dungeon progress tracker`
+        );
+        const missionAdded = client.sentPackets.find((packet) => packet.id === 0x85);
+        assert.ok(
+            missionAdded,
+            `${testCase.level} entry should push the active mission snapshot to the client`
+        );
+        assert.deepEqual(decodeMissionAddedPacket(missionAdded!.payload), {
+            missionId: testCase.missionId,
+            active: 1
+        });
+    }
 }
 
 async function testCemeteryMiniDungeonCompletesOnlyFromFullClearProgress(): Promise<void> {

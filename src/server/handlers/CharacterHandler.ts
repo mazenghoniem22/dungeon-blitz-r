@@ -1297,6 +1297,7 @@ export class CharacterHandler {
         });
 
         MissionHandler.syncMissionStateToClient(client);
+        MissionHandler.syncFullClearDungeonEntryMissionToClient(client);
         CharacterHandler.sendBootstrappedStoryMission(client, storyRepair.addedMissionId);
 
         SocialHandler.handleSessionReady(client);
